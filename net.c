@@ -60,53 +60,32 @@ a block of data from the server. You may use the above nread function here.
 */
 static bool recv_packet(int sd, uint32_t *op, uint8_t *ret, uint8_t *block) {
 	uint8_t header[HEADER_LEN]; // Array to store the received array variable "sd"
+	//uint8_t header[261];
 	int offSet = 0; // Variable to keep track of buffer offset
-	uint8_t byte = 0; // Variable to keep track of byte number
-	//uint16_t len = 0;
-	//byte = ret; // Check casting of this variable
-	if(nread(sd, HEADER_LEN, header) == false){ // Reading data into array from server also checking invalid read
+	
+	
+	//if(nread(sd, sizeof(HEADER_LEN), header) == false){ // Reading data into array from server also checking invalid read
+	if(nread(sd, HEADER_LEN, header) == false){
 	return false;
 	}
-	//Bytes 1-4 Opcode
-	//Byte 5 Info code
-	//Bytes 6-261 Data block Payload
 	
+		//Bytes 1-4 Opcode
+		//Byte 5 Info code
+		//Bytes 6-261 Data block Payload
 	
 	// Use a series of Memcpy functions to copy data into proper variables from server
-	memcpy(op, header + offSet, sizeof(*op)); // Copying the first four byes of OP Code
+	memcpy(op, &header + offSet, sizeof(*op)); // Copying the first four byes of OP Code
 	offSet += sizeof(*op); // Incrementing offset by 4 base
 	*op = htonl(*op);
-	memcpy(ret, header + offSet, sizeof(*ret)); // Coping info code into ret variable
-//	*ret = ntohs(*ret); // Converting bytes NOT NEEDED
+	memcpy(ret, &header + offSet, 1); // Coping info code into ret variable
+
 	
-	/* Info Code Meaning 4 different cases Note: Each '#' represents a different case
-	# 00000000 = JBOD operation returns 0 && datablock not present return -1 byte = 0
-	# 00000001 = JBOD operation returns -1 && datablock no present also returns -1 byte = 1
-	# 00000010 = JBOD operation returns 0  && datablock is present also returns 0 byte = 2
-	# 00000011 = JBOD operation returns -1 && datablock is present returns 0 byte = 3
-	*/ // This result gets returned to JBOD_connect and states whether successful or not
-	// ret at this point already has the assginment of 1 byte
-	// Method to read specific bit in ret variable
-	//byte = (ret >> ); // Shifting bits Using &1 operator to mask other bits
-	//if(byte == 0){ // Case 1
-	//return false;
-	//}
-	//if(byte == 1){ // Case 2
-	//return false;
-	//}
-	
-	
-	
-	byte = ret;
-	byte &= 2;
-	if(byte == 2){ // Case 3//replaced byte variable
+	if(*ret == 2){
 	nread(sd, 256, block); // Since data is present read the block
+	printf("\nnread Byte Value: %hhn is returning true in recvpacket function\n", ret);
 	return true;
 	}
-	//if(byte == 3){ // Case 4
-	//return false;
-	//}
-
+//printf("\nRET VALUE: %d nread is returning fase in recvpacket function\n", byte);
 	return false;
 }
 
@@ -123,24 +102,27 @@ The above information (when applicable) has to be wrapped into a jbod request pa
 You may call the above nwrite function to do the actual sending.  
 */
 static bool send_packet(int sd, uint32_t op, uint8_t *block) {
-	uint8_t header[264];
-	uint16_t length = HEADER_LEN; // Setting length to size of header len
-	uint16_t ops = op >> 12; // Shifting 12 blocks over to read 
-	if(block != NULL){ // Checking to see fi block is passed as NULL
-	length += JBOD_BLOCK_SIZE; // If not NULL, increase length by JBOD Block size
+	uint8_t header[261];
+	uint16_t length = 0; // Setting length to size of header len
+	int offSet = 0;
+	int info = 0;
+	op = htonl(op);
+	
+	if(((ntohl(op) >> 12 )) == 7){ // Checking to see if command is equal to jbod_write_block
+	length = 261; // Set length to 261
+	info = 2; // Set info code to 2
+	memcpy(header + 5, block, 256); // If write code copy block into header offset by 5
+	}
+	else{
+	length = 5; // If not Jbod... set length to 5
 	}
 	
-	length = htons(length);
-	ops = htonl(op);
-	
-	
-	
-	memcpy(header, &length, sizeof(length));
-	memcpy(header + (sizeof(length)), &ops, sizeof(ops));
-	if(ops == JBOD_WRITE_BLOCK){
-	memcpy(header + HEADER_LEN, block, JBOD_BLOCK_SIZE);
-	}
-	if(nwrite(sd, length, header) == true){
+	memcpy(header, &op, 4); // Memcopy op code into header first 4 bytes
+	offSet += 4; // Increase offset by 4
+	memcpy(header + offSet, &info, 1); //copy info code into header byte 5
+	offSet += 1; // increase offset by 1
+	if(nwrite(sd, length, header) == true){ // Send to nwrite function to package
+	printf("\nnwrite is returning true in sendpacket function\n");
 	return true;
 	}
 	return false;
@@ -161,6 +143,8 @@ bool jbod_connect(const char *ip, uint16_t port) {
 	# read() and write() data using the socket
 	# Close the socket
 	*/
+	
+	
 	// Variable Declarations
 	cli_sd = socket(AF_INET, SOCK_STREAM, 0);// Setting cli_sd variable to socket
 	if(cli_sd == -1){ // Checking to see if socket connection successful
@@ -171,15 +155,15 @@ bool jbod_connect(const char *ip, uint16_t port) {
 	// Creating connect to server
 	caddr.sin_family = AF_INET;
 	caddr.sin_port = htons(port);
-	
-	if(inet_aton(ip, &caddr.sin_addr) == 0){ // First way slide 23
-	return false;
-	}
+	inet_aton(/*(char*)*/ip, &caddr.sin_addr);
+	//if(inet_aton(ip, &caddr.sin_addr) == 0){ // First way slide 23
+	//return false;
+	//}
 
 	if(connect(cli_sd, (const struct sockaddr *)&caddr, sizeof(caddr)) == 0){
+	//if(connect(cli_sd, (const struct sockaddr *)&caddr, sizeof(struct sockaddr)) == 0){
 	return true; 
-	}
-	//cli_sd = 1;
+	}	
 	return false; // Return false if it reaches end of function
 
 }
@@ -203,20 +187,12 @@ return: 0 means success, -1 means failure.
 */
 int jbod_client_operation(uint32_t op, uint8_t *block) {
 	uint8_t ret; // Variable to return what the server receives from packet
-	//if((cli_sd = jbod_connect(JBOD_SERVER, JBOD_PORT)) == -1){ // Connecting to client
-	//return -1; // If connection to client fails return -1
-	//}
-	
 	if(send_packet(cli_sd, op, block) == false){ // Send packet to server
 	return -1; // If send packet fails return -1
 	}
 	
 	if(recv_packet(cli_sd, &op, &ret, block) == false){ // Collect info from server
 	return -1; // If collection fails return -1
-	}
-	//while(cli_sd != -1){
-	//jbod_disconnect(); // Disconnecting from server
-	// If disconnection fails, Attempt again
-	//}	
+	}	
 	return ret;
 }
