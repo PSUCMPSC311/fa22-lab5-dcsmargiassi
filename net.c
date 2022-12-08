@@ -21,7 +21,7 @@ static bool nread(int fd, int len, uint8_t *buf) {
 	int bytesread = 0; // Variable to keep track of data already read
 	while(bytesread < len){ // Loop to continue reading data until finished
 	int n = read(fd, &buf[bytesread], len - bytesread);// ring from buf to fd using read as offset
-	if(n < 0) { // Failure check for negative n value
+	if(n < 0|| n > len) { // Failure check for negative n value or read greater than length
 	return false; // Return false if n < 0
 	}
 	bytesread += n; // Incrementing read varable by n bytes read
@@ -36,7 +36,7 @@ static bool nwrite(int fd, int len, uint8_t *buf) {
 	int byteswrote = 0; // Variable to keep track of data already wrote
 	while(byteswrote < len){ // Loop to continue writing data until finished
 	int n = write(fd, &buf[byteswrote], len - byteswrote); // writing from buf to fd using wrote as offset
-	if(n < 0) { // Failure check for negative n value
+	if(n < 0 || n > len) { // Failure check for negative n value or write greater than length
 	return false; // Return false if n < 0 
 	}
 	byteswrote += n; // Incrementing wrote variable by n bytes wrote
@@ -60,12 +60,9 @@ a block of data from the server. You may use the above nread function here.
 */
 static bool recv_packet(int sd, uint32_t *op, uint8_t *ret, uint8_t *block) {
 	//uint8_t header[HEADER_LEN]; // Array to store the received array variable "sd"
-	uint8_t header[261];
+	uint8_t header[261]; // Creating temp beffer to hold header and block if needed
 	int offSet = 0; // Variable to keep track of buffer offset
-	
-	
-	//if(nread(sd, sizeof(HEADER_LEN), header) == false){ // Reading data into array from server also checking invalid read
-	if(nread(sd, HEADER_LEN, header) == false){
+	if(nread(sd, HEADER_LEN, header) == false){// Reading data into array from server also checking invalid read
 	return false;
 	}
 		//Bytes 1-4 Opcode
@@ -73,11 +70,9 @@ static bool recv_packet(int sd, uint32_t *op, uint8_t *ret, uint8_t *block) {
 		//Bytes 6-261 Data block Payload
 	// Use a series of Memcpy functions to copy data into proper variables from server
 	memcpy(op, header + offSet, 4); // Copying the first four byes of OP Code
-	offSet += 4; // Incrementing offset by 4 base
+	offSet += 4; // Incrementing offset by 4
 	*op = ntohl(*op);
 	memcpy(ret, header + offSet, 1); // Coping info code into ret variable
-
-	
 	if(*ret == 2){
 	nread(sd, 256, block); // Since data is present read the block
 	//printf("\nnread Byte Value: %hhn is returning true in recvpacket function\n", ret);
@@ -96,12 +91,12 @@ The above information (when applicable) has to be wrapped into a jbod request pa
 You may call the above nwrite function to do the actual sending.  
 */
 static bool send_packet(int sd, uint32_t op, uint8_t *block) {
-	uint8_t header[261];
+	uint8_t header[261]; // Creating temp buffer to hold header and block if needed
 	uint16_t length = HEADER_LEN; // Setting length to size of header len
 	int offSet = 0;
 	int infoCode = 0; // To hold info code
 	uint32_t command = op >> 12;
-	op = htonl(op);
+	op = htonl(op); // Process to convert op code into readable info
 	memcpy(header, &op, 4); // Memcopy op code into header first 4 bytes
 	offSet += 4; // Increase offset by 4
 	if(command == 7){ // Checking to see if command is equal to jbod_write_block
@@ -112,16 +107,10 @@ static bool send_packet(int sd, uint32_t op, uint8_t *block) {
 	//else{
 	//length = 5; // If not Jbod... set length to 5
 	//}
-	
-		//memcpy(header, &op, 4); // Memcopy op code into header first 4 bytes
-		//offSet += 4; // Increase offset by 4
 	memcpy(header + offSet, &infoCode, 1); //copy info code into header byte 5
 	offSet += 1; // increase offset by 1
-	//if(info == 2){
-	//memcpy(header + offSet, &block, 256);
-	//}
 	if(nwrite(sd, length, header) == true){ // Send to nwrite function to package
-	printf("\nnwrite is returning true in sendpacket function\n");
+	//printf("\nnwrite is returning true in sendpacket function\n");
 	return true;
 	}
 	else{
@@ -144,8 +133,6 @@ bool jbod_connect(const char *ip, uint16_t port) {
 	# read() and write() data using the socket
 	# Close the socket
 	*/
-	
-	// Variable Declarations
 	cli_sd = socket(AF_INET, SOCK_STREAM, 0);// Setting cli_sd variable to socket
 	if(cli_sd == -1){ // Checking to see if socket connection successful
 	return false; // If failed, return false
@@ -160,9 +147,9 @@ bool jbod_connect(const char *ip, uint16_t port) {
 		//return false;
 		//}
 
-	if(connect(cli_sd, (const struct sockaddr *)&caddr, sizeof(caddr)) == 0){
+	if(connect(cli_sd, (const struct sockaddr *)&caddr, sizeof(caddr)) == 0){ // Connecting socket to server
 	//if(connect(cli_sd, (const struct sockaddr *)&caddr, sizeof(struct sockaddr)) == 0){
-	return true; 
+	return true; // if it is successful, return true
 	}	
 	else{
 	return false; // Return false if it reaches end of function
@@ -182,15 +169,9 @@ return: 0 means success, -1 means failure.
 */
 int jbod_client_operation(uint32_t op, uint8_t *block) {
 	uint8_t ret; // Variable to return what the server receives from packet
-	//printf("\nPresenpacket\n");
-	//send_packet(cli_sd, op, block);
-	//printf("\nPost sent packet\n");
-	//recv_packet(cli_sd, &op, &ret, block);
-	//printf("\nPre recpacket\n");
 	if(send_packet(cli_sd, op, block) == false){ // Send packet to server
 	return -1; // If send packet fails return -1
 	}
-	
 	if(recv_packet(cli_sd, &op, &ret, block) == false){ // Collect info from server
 	return -1; // If collection fails return -1
 	}	
