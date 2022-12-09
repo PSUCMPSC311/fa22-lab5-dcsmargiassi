@@ -10,7 +10,12 @@
 #include <arpa/inet.h>
 #include "net.h"
 #include "jbod.h"
-
+	/* Instead of executing make command, execute the following: Due to using mdadm.o and cache.o
+	# gcc -c -Wall -I. -fpic -g -fbounds-check -Werror tester.c -o tester.o
+	# gcc -c -Wall -I. -fpic -g -fbounds-check -Werror util.c -o util.o
+	# gcc -c -Wall -I. -fpic -g -fbounds-check -Werror net.c -o net.o
+	# gcc -L. -o tester tester.o util.o mdadm.o cache.o net.o jbod.o -lcrypto
+	*/
 /* the client socket descriptor for the connection to the server */
 int cli_sd = -1;
 
@@ -59,15 +64,16 @@ and then use the length field in the header to determine whether it is needed to
 a block of data from the server. You may use the above nread function here.  
 */
 static bool recv_packet(int sd, uint32_t *op, uint8_t *ret, uint8_t *block) {
-	//uint8_t header[HEADER_LEN]; // Array to store the received array variable "sd"
 	uint8_t header[261]; // Creating temp beffer to hold header and block if needed
 	int offSet = 0; // Variable to keep track of buffer offset
 	if(nread(sd, HEADER_LEN, header) == false){// Reading data into array from server also checking invalid read
 	return false;
 	}
-		//Bytes 1-4 Opcode
-		//Byte 5 Info code
-		//Bytes 6-261 Data block Payload
+		/*Location of bytes in header
+		# Bytes 1-4 Opcode
+		# Byte 5 Info code
+		# Bytes 6-261 Data block Payload
+		*/
 	// Use a series of Memcpy functions to copy data into proper variables from server
 	memcpy(op, header + offSet, 4); // Copying the first four byes of OP Code
 	offSet += 4; // Incrementing offset by 4
@@ -92,25 +98,25 @@ You may call the above nwrite function to do the actual sending.
 */
 static bool send_packet(int sd, uint32_t op, uint8_t *block) {
 	uint8_t header[261]; // Creating temp buffer to hold header and block if needed
-	uint16_t length = HEADER_LEN; // Setting length to size of header len
-	int offSet = 0;
+	uint16_t wLength = HEADER_LEN; // Setting length to size of header len
+	int offSet = 0; // Variable to keep track of memcpy offset
 	int infoCode = 0; // To hold info code
-	uint32_t command = op >> 12;
+	uint32_t command = op >> 12; // Based on lab 2 shifting by 12 is the location of command opcode
 	op = htonl(op); // Process to convert op code into readable info
 	memcpy(header, &op, 4); // Memcopy op code into header first 4 bytes
 	offSet += 4; // Increase offset by 4
 	if(command == 7){ // Checking to see if command is equal to jbod_write_block
-	length = 261; // Set length to 261
+	wLength = 261; // Set length to 261
 	infoCode = 2; // Set info code to 2
 	memcpy(header + 5, block, 256); // If write code copy block into header offset by 5
 	}
 	//else{
-	//length = 5; // If not Jbod... set length to 5
+	//wlength = 5; // If not Jbod... set length to 5
 	//}
 	memcpy(header + offSet, &infoCode, 1); //copy info code into header byte 5
 	offSet += 1; // increase offset by 1
-	if(nwrite(sd, length, header) == true){ // Send to nwrite function to package
-	//printf("\nnwrite is returning true in sendpacket function\n");
+	if(nwrite(sd, wLength, header) == true){ // Send to nwrite function to package
+	//printf("\nnwrite is returning true in sendpacket function\n"); // Debug statement
 	return true;
 	}
 	else{
@@ -137,18 +143,18 @@ bool jbod_connect(const char *ip, uint16_t port) {
 	if(cli_sd == -1){ // Checking to see if socket connection successful
 	return false; // If failed, return false
 	}
+	
 	struct sockaddr_in caddr; // IPv4 connection
 	
-	// Creating connect to server
-	caddr.sin_family = AF_INET;
-	caddr.sin_port = htons(port);
-	inet_aton((char*)ip, &caddr.sin_addr);
-		//if(inet_aton(ip, &caddr.sin_addr) == 0){ // First way slide 23
-		//return false;
-		//}
+	// Creating connection to server
+	caddr.sin_family = AF_INET; // Setting structure domain
+	caddr.sin_port = htons(port); // Setting structure port 
+	
+	if(inet_aton((char*)ip, &caddr.sin_addr) == 0){ // Checking for failure in connection
+	return false; // If fails return false
+	}
 
 	if(connect(cli_sd, (const struct sockaddr *)&caddr, sizeof(caddr)) == 0){ // Connecting socket to server
-	//if(connect(cli_sd, (const struct sockaddr *)&caddr, sizeof(struct sockaddr)) == 0){
 	return true; // if it is successful, return true
 	}	
 	else{
@@ -157,7 +163,7 @@ bool jbod_connect(const char *ip, uint16_t port) {
 }
 /* disconnects from the server and resets cli_sd */
 void jbod_disconnect(void) {
-	close(cli_sd); // Checking to see if client side variable is already false
+	close(cli_sd); // Closing server connection 
 	cli_sd = -1; // Setting client side variable back to -1
 }
 
@@ -168,7 +174,7 @@ The meaning of each parameter is the same as in the original jbod_operation func
 return: 0 means success, -1 means failure.
 */
 int jbod_client_operation(uint32_t op, uint8_t *block) {
-	uint8_t ret; // Variable to return what the server receives from packet
+	uint8_t ret; // Variable to receive what the server receives from packet
 	if(send_packet(cli_sd, op, block) == false){ // Send packet to server
 	return -1; // If send packet fails return -1
 	}
